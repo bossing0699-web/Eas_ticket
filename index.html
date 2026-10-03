@@ -99,16 +99,15 @@ dialog td input{text-align:left;background:#fff;border-color:var(--line)}
 <input type="file" id="fTeams" accept=".xlsx,.xls" hidden>
 <input type="file" id="fWO" accept=".xlsx,.xls,.csv" hidden>
 <main>
-  <div class="tabs"><button data-t="sum" class="on">สรุปรายงาน</button><button data-t="det">รายละเอียด (Follow-up)</button></div>
+  <div class="tabs"><button data-t="sum" class="on">สรุปรายงาน</button><button data-t="det">รายละเอียด</button></div>
   <section id="sum" class="card"></section>
   <section id="det" class="card" hidden>
     <div class="filters">
       <select id="fCL"></select>
-      <select id="fProv"></select>
       <select id="fPlan"><option value="">Plan ทั้งหมด</option><option value="1">Plan = 1 (มีแผนทำงาน)</option><option value="0">Plan = 0 (ไม่มีแผน)</option></select>
-      <select id="fJob"><option value="">งานที่ปิดได้ ทั้งหมด</option><option value="1">ปิดได้ (≥ 1 งาน)</option><option value="0">ไม่มีงานที่ปิดได้ (0 / ว่าง)</option></select>
-      <input id="fQ" placeholder="ค้นหาชื่อทีม / ID">
       <select id="fAct"><option value="">Actual ทั้งหมด</option><option value="1">Actual = 1 (Clock in)</option><option value="0">Actual = 0 (ไม่ Clock in)</option><option value="gap">Plan &gt; Actual (ไม่มาตามแผน)</option></select>
+      <select id="fJob"><option value="">งานที่ปิดได้ ทั้งหมด</option><option value="eq0">งานที่ปิดได้ = 0</option><option value="lt1">งานที่ปิดได้น้อยกว่า 1 ใบ</option><option value="lt2">งานที่ปิดได้น้อยกว่า 2 ใบ</option><option value="lt3">งานที่ปิดได้น้อยกว่า 3 ใบ</option></select>
+      <input id="fQ" placeholder="ค้นหาชื่อทีม / ID">
     </div>
     <div id="detTbl"></div>
   </section>
@@ -169,7 +168,7 @@ const groupReasons=(list,type)=>groupReasonStats(list,type).map(g=>`${g.label} (
 const num=v=>(v===null||v===undefined||v==='')?null:(isNaN(Number(v))?null:Number(v));
 const key=(d,t)=>d+'|'+t;
 const tcode=s=>String(s??'').trim().split(/\s+/)[0];   // รหัสทีม เช่น CC-EA-CBR-OFC-001 (ไม่ผูกกับ 【ON/OFF】)
-const cleanTeamName=s=>String(s??'').replace(/【[^】]*(?:OFF|NO)[^】]*】/gi,'').replace(/\s+/g,' ').trim();
+const cleanTeamName=s=>String(s??'').replace(/【[\s\u0E4C]*(?:OFF|ON)\s*】/gi,'').replace(/\s+/g,' ').trim();
 const fmtD=d=>{const [y,m,x]=d.split('-');return `${+x}/${+m}/${y}`};
 
 // ---------- state (Supabase is the only persistent store) ----------
@@ -279,16 +278,17 @@ function renderSum(){
     if(low)(notClosedByProvince[t.province]||(notClosedByProvince[t.province]=[])).push(d.not_closed_reason||'ยังไม่ระบุสาเหตุ');
   });
   const provinces=[...new Set([...Object.keys(absentByProvince),...Object.keys(notClosedByProvince)])].sort();
-  h+=`<div class="ttl" style="margin-top:18px"><span>สรุปสาเหตุแยกตามจังหวัด</span><span>${date?fmtD(date):''}</span></div><table><thead><tr><th>Province</th><th>ประเภท</th><th>สาเหตุ</th><th>จำนวนทีม</th><th>สัดส่วนในจังหวัด</th></tr></thead><tbody>`;
-  if(!provinces.length)h+='<tr><td colspan="5" class="good">ไม่พบทีมเข้าเงื่อนไข</td></tr>';
+  const provinceTeamCounts={};teamsNow().forEach(t=>provinceTeamCounts[t.province]=(provinceTeamCounts[t.province]||0)+1);
+  h+=`<div class="ttl" style="margin-top:18px"><span>สรุปสาเหตุแยกตามจังหวัด</span><span>${date?fmtD(date):''}</span></div><table><thead><tr><th>Province</th><th>ทีมทั้งหมด</th><th>ประเภท</th><th>สาเหตุ</th><th>จำนวนทีม</th><th>สัดส่วนในจังหวัด</th></tr></thead><tbody>`;
+  if(!provinces.length)h+='<tr><td colspan="6" class="good">ไม่พบทีมเข้าเงื่อนไข</td></tr>';
   provinces.forEach(p=>{
     const summaries=[
       {type:`ไม่มาทำงาน (${gapLabel})`,items:groupReasonStats(absentByProvince[p]||[],'absent'),total:(absentByProvince[p]||[]).length},
       {type:`ปิดงานไม่ได้ / ได้น้อยกว่า ${limit} ใบ`,items:groupReasonStats(notClosedByProvince[p]||[],'not_closed'),total:(notClosedByProvince[p]||[]).length}
     ].filter(s=>s.items.length);
-    const provinceRows=summaries.reduce((n,s)=>n+s.items.length,0);let provinceShown=false;
+    const provinceRows=summaries.reduce((n,s)=>n+s.items.length,0),provinceTotal=provinceTeamCounts[p]||0;let provinceShown=false;
     summaries.forEach(s=>s.items.forEach((g,i)=>{
-      h+=`<tr>${!provinceShown?`<td rowspan="${provinceRows}"><b>${esc(p)}</b></td>`:''}${i===0?`<td class="l" rowspan="${s.items.length}"><b>${esc(s.type)}</b><br><small>รวม ${s.total} ทีม</small></td>`:''}<td class="l">${esc(g.label)}</td><td>${g.count}</td><td>${(g.count/s.total*100).toFixed(1)}%</td></tr>`;
+      h+=`<tr>${!provinceShown?`<td rowspan="${provinceRows}"><b>${esc(p)}</b></td><td rowspan="${provinceRows}"><b>${provinceTotal}</b></td>`:''}${i===0?`<td class="l" rowspan="${s.items.length}"><b>${esc(s.type)}</b><br><small>เข้าเงื่อนไข ${s.total} ทีม</small></td>`:''}<td class="l">${esc(g.label)}</td><td>${g.count}</td><td>${provinceTotal?(g.count/provinceTotal*100).toFixed(1)+'%':'-'}</td></tr>`;
       provinceShown=true;
     }));
   });
@@ -299,8 +299,8 @@ function renderSum(){
 // ---------- detail ----------
 const clOf=p=>(S.roster.find(r=>r.province===p)||{}).cluster_leader||'';
 function renderDet(){
-  const date=$('date').value, pv=$('fProv').value, q=$('fQ').value.trim().toLowerCase(), ac=$('fAct').value, pl=$('fPlan').value, jb=$('fJob').value, cl=$('fCL').value;
-  const list=teamsNow().filter(t=>(!cl||clOf(t.province)===cl)&&(!pv||t.province===pv)&&(!q||(t.team_name||t.team_id).toLowerCase().includes(q))).sort((a,b)=>a.province.localeCompare(b.province)||a.team_id.localeCompare(b.team_id));
+  const date=$('date').value, q=$('fQ').value.trim().toLowerCase(), ac=$('fAct').value, pl=$('fPlan').value, jb=$('fJob').value, cl=$('fCL').value;
+  const list=teamsNow().filter(t=>(!cl||clOf(t.province)===cl)&&(!q||(t.team_name||t.team_id).toLowerCase().includes(q))).sort((a,b)=>a.province.localeCompare(b.province)||a.team_id.localeCompare(b.team_id));
   let h='<table><thead><tr><th>Cluster Leader</th><th>Province</th><th>Skill</th><th>Team</th><th class="n">Active</th><th class="n">Plan</th><th class="n">Actual</th><th>สาเหตุที่ไม่มาทำงาน</th><th class="n">งานที่ปิดได้</th><th>สาเหตุที่ปิดงานไม่ได้</th></tr></thead><tbody>',n=0;
   list.forEach(t=>{
     const d=S.daily[key(date,t.team_id)]||{};
@@ -308,7 +308,9 @@ function renderDet(){
     if(ac==='gap'&&!(pa>aa)) return;
     if((ac==='1'||ac==='0')&&((aa>0?'1':'0')!==ac)) return;
     if(pl!==''&&((num(d.work_plan)||0)>0?'1':'0')!==pl) return;
-    if(jb!==''&&((num(d.jobs_closed)||0)>0?'1':'0')!==jb) return; n++;
+    const jobs=num(d.jobs_closed)||0;
+    if(jb==='eq0'&&jobs!==0)return;
+    if(jb.startsWith('lt')&&!(jobs<Number(jb.slice(2))))return; n++;
     const f=(k,cl,ty)=>ty==='text'?`<td class="x"><textarea rows="1" placeholder="พิมพ์สาเหตุ..." data-t="${esc(t.team_id)}" data-k="${k}">${esc(d[k])}</textarea></td>`:`<td${ty?'':' class="n"'}><input ${cl?'class="t"':''} type="${ty||'number'}" ${ty?'':'min="0"'} data-t="${esc(t.team_id)}" data-k="${k}" value="${esc(d[k])}"></td>`;
     const shownTeam=cleanTeamName(t.team_name||t.team_id);
     h+=`<tr><td class="l">${esc(clOf(t.province))}</td><td>${esc(t.province)}</td><td>${esc(t.skill)}</td><td class="tm" title="${esc(shownTeam)}">${esc(shownTeam)}</td>${f('team_active')}${f('work_plan')}${f('work_actual')}${f('absent_reason',1,'text')}${f('jobs_closed')}${f('not_closed_reason',1,'text')}</tr>`;
@@ -490,14 +492,27 @@ $('bGroups').onclick=()=>{const b=$('gBody');b.innerHTML='';(S.causeGroups||[]).
 $('gAdd').onclick=()=>$('gBody').append(gRow());
 $('gCancel').onclick=()=>$('dG').close();
 $('gSave').onclick=async()=>{
+  const steps=[],add=(n,st,msg)=>steps.push({n,st,msg}),finish=ok=>{$('dG').close();showPipeline('Pipeline กลุ่มสาเหตุ',steps,ok)};
   const rows=[...$('gBody').rows].map(tr=>{const o={};tr.querySelectorAll('[data-k]').forEach(x=>o[x.dataset.k]=x.value.trim());return o});
-  if(rows.some(r=>!r.group_name||!r.phrase))return alert('กรุณากรอกชื่อกลุ่มและคำ/วลีให้ครบ');
-  const seen=new Set();for(const r of rows){const k=r.reason_type+'|'+normalizeReason(r.phrase);if(seen.has(k))return alert('มีคำ/วลีซ้ำในประเภทเดียวกัน: '+r.phrase);seen.add(k)}
+  const incomplete=rows.filter(r=>!r.group_name||!r.phrase).length;
+  if(incomplete){add('1. ตรวจข้อมูล','fail',`มี ${incomplete} แถวที่กรอกชื่อกลุ่มหรือคำ/วลีไม่ครบ`);finish(false);return}
+  add('1. ตรวจข้อมูล','ok',`ข้อมูลครบ ${rows.length} กฎ`);
+  const seen=new Set(),duplicates=[];for(const r of rows){const k=r.reason_type+'|'+normalizeReason(r.phrase);if(seen.has(k))duplicates.push(r.phrase);seen.add(k)}
+  if(duplicates.length){add('2. ตรวจคำซ้ำ','fail','คำ/วลีซ้ำในประเภทเดียวกัน: '+duplicates.join(', '));finish(false);return}
+  add('2. ตรวจคำซ้ำ','ok','ไม่พบคำ/วลีซ้ำในประเภทเดียวกัน');
   try{
     await sb('DELETE','cause_group_rules?id=gt.0');
     if(rows.length)await sb('POST','cause_group_rules',rows,{Prefer:'return=minimal'});
-    await pull();$('dG').close();refresh();status(`บันทึกกฎจัดกลุ่มสาเหตุ ${rows.length} รายการแล้ว`);
-  }catch(e){status('บันทึกกลุ่มสาเหตุไม่สำเร็จ: '+e.message,1);alert(e.message)}
+    add('3. บันทึก Supabase','ok',`บันทึก ${rows.length} กฎลง cause_group_rules`);
+  }catch(e){add('3. บันทึก Supabase','fail',e.message);status('บันทึกกลุ่มสาเหตุไม่สำเร็จ: '+e.message,1);finish(false);return}
+  try{
+    await pull();
+    const canon=a=>a.map(r=>`${r.reason_type}|${normalizeReason(r.phrase)}|${normalizeReason(r.group_name)}`).sort();
+    const expected=canon(rows),actual=canon(S.causeGroups||[]);
+    if(JSON.stringify(expected)!==JSON.stringify(actual))throw new Error(`ข้อมูลไม่ตรงกัน: ส่ง ${expected.length} กฎ แต่อ่านกลับ ${actual.length} กฎ`);
+    add('4. Recheck จาก Database','ok',`อ่านกลับตรงกันครบ ${actual.length} กฎ`);
+    refresh();status(`บันทึกและ Recheck กฎจัดกลุ่มสาเหตุ ${rows.length} รายการแล้ว`);finish(true);
+  }catch(e){add('4. Recheck จาก Database','fail',e.message);status('Recheck กลุ่มสาเหตุไม่สำเร็จ: '+e.message,1);finish(false)}
 };
 
 // ---------- supabase dialog ----------
@@ -519,11 +534,8 @@ $('lowJobs').onchange=async()=>{
   try{await upsert('app_settings',[{setting_key:'low_jobs_threshold',setting_value:value,updated_at:new Date().toISOString()}],'setting_key');S.settings.low_jobs_threshold=value;status(`บันทึกเกณฑ์ปิดงานได้น้อยกว่า ${value} ใบแล้ว`)}
   catch(e){status('บันทึกเกณฑ์ไม่สำเร็จ: '+e.message,1);try{await pull();refresh()}catch(_){}}
 };
-['fCL','fProv','fPlan','fJob','fAct'].forEach(i=>$(i).onchange=renderDet); $('fQ').oninput=renderDet;
+['fCL','fPlan','fAct','fJob'].forEach(i=>$(i).onchange=renderDet); $('fQ').oninput=renderDet;
 function refresh(){
-  const cur=$('fProv').value;
-  $('fProv').innerHTML='<option value="">ทุกจังหวัด</option>'+[...new Set(Object.values(S.teams).map(t=>t.province))].sort().map(p=>`<option>${p}</option>`).join('');
-  $('fProv').value=cur;
   const cc=$('fCL').value;
   $('fCL').innerHTML='<option value="">Cluster Leader ทั้งหมด</option>'+[...new Set(S.roster.map(r=>r.cluster_leader).filter(Boolean))].map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('');
   $('fCL').value=cc;
