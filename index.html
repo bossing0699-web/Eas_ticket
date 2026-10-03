@@ -93,6 +93,7 @@ dialog td input{text-align:left;background:#fff;border-color:var(--line)}
     <button id="bWO">⬆ Upload งานที่ปิดได้ (WO)</button>
     <button id="bRoster">✎ Cluster Leader</button>
     <button id="bGroups">✎ กลุ่มสาเหตุ</button>
+    <button id="bRefresh">↻ รีเฟรชข้อมูล</button>
     <button id="bCfg">⚙ Supabase</button>
   </div>
 </header>
@@ -542,14 +543,15 @@ function refresh(){
   renderSum(); if(!$('det').hidden) renderDet();
 }
 let syncing=false;
-async function syncFromSupabase(){
+async function syncFromSupabase(force=false){
   const editing=['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName);
-  if(syncing||!remote()||document.hidden||editing||Object.keys(pending).length||document.querySelector('dialog[open]'))return;
+  if(syncing||!remote()||(!force&&(document.hidden||editing||Object.keys(pending).length||document.querySelector('dialog[open]'))))return;
   syncing=true;
   try{await pull();refresh();status('ซิงก์ข้อมูลล่าสุดจาก Supabase แล้ว')}
   catch(e){status('Auto Sync ไม่สำเร็จ: '+e.message,1)}
   finally{syncing=false}
 }
+$('bRefresh').onclick=()=>syncFromSupabase(true);
 (async function(){
   init();
   $('date').value=new Date().toISOString().slice(0,10);
@@ -558,7 +560,7 @@ async function syncFromSupabase(){
   const all=[...new Set(Object.values(S.daily).map(d=>d.report_date))].sort();
   if(all.length&&!all.includes($('date').value)) $('date').value=all[all.length-1];
   refresh(); if(!$('st').textContent) status('พร้อมใช้งาน');
-  setInterval(syncFromSupabase,15000);
+  setInterval(syncFromSupabase,60000);
 })();
 </script>
 </body>
