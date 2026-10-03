@@ -112,7 +112,7 @@ dialog td input{text-align:left;background:#fff;border-color:var(--line)}
 </main>
 
 <dialog id="dR"><b>แก้ไขรายชื่อ Cluster Leader</b>
-  <div style="overflow:auto;max-height:60vh;margin-top:8px"><table><thead><tr><th>AD EAS</th><th>Mgr.</th><th>Cluster Leader</th><th>Province</th><th></th></tr></thead><tbody id="rBody"></tbody></table></div>
+  <div style="overflow:auto;max-height:60vh;margin-top:8px"><table><thead><tr><th>Associate Director</th><th>Manager Area</th><th>Cluster Leader</th><th>Province</th><th></th></tr></thead><tbody id="rBody"></tbody></table></div>
   <div class="row"><button id="rAdd">+ เพิ่มแถว</button><button id="rCancel">ยกเลิก</button><button class="p" id="rSave">บันทึก</button></div>
 </dialog>
 
@@ -233,7 +233,7 @@ const cls=p=>p===null?'':p>=95?'good':p<85?'warn':'';
 function renderSum(){
   const date=$('date').value, rows=rosterRows(), T={teams:0,active:0,plan:0,actual:0,jobs:0};
   let h=`<div class="ttl"><span>สรุปรายงาน${skillF()?' ('+skillF()+')':''}</span><span>${date?fmtD(date):''}</span></div>
-  <table><thead><tr><th>AD EAS</th><th>Mgr.</th><th>Cluster Leader</th><th>Province</th><th>Active</th><th>Plan</th><th>Actual</th><th>ขาด</th><th>% Actual/Plan</th><th>งานที่ปิดได้</th></tr></thead><tbody>`;
+  <table><thead><tr><th>Associate Director</th><th>Manager Area</th><th>Cluster Leader</th><th>Province</th><th>Active</th><th>Plan</th><th>Actual</th><th>ขาด</th><th>% Actual/Plan</th><th>งานที่ปิดได้</th></tr></thead><tbody>`;
   rows.forEach((r,i)=>{
     const c=calc(r.province,date); for(const k in T) T[k]+=c[k];
     const p=pct(c.actual,c.plan), sa=span(rows,i,['ad_eas']), sm=span(rows,i,['ad_eas','mgr']), sl=span(rows,i,['ad_eas','mgr','cluster_leader']);
