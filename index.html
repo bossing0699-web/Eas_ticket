@@ -87,6 +87,7 @@ dialog td input{text-align:left;background:#fff;border-color:var(--line)}
   <div class="bar">
     <label>วันที่ <input type="date" id="date"></label>
     <label>Skill <select id="skill"><option value="">ทั้งหมด</option><option>OFC</option><option>NODE</option></select></label>
+    <label>สูตรเปอร์เซ็นต์ <select id="ratioMode"><option value="actual_plan">% Actual/Plan</option><option value="actual_active" selected>% Actual/Active</option></select></label>
     <label>เงื่อนไขทีมขาด <select id="gapMode"><option value="actual_plan">Actual ต่ำกว่า Plan</option><option value="plan_active">Plan ต่ำกว่า Active (ภัยธรรมชาติ)</option><option value="active_no_work">Active 1 / Plan 0 / Actual 0 / ปิดงาน 0</option></select></label>
     <label>งานปิดได้น้อยกว่า <select id="lowJobs"><option value="1">1 ใบ</option><option value="2">2 ใบ</option><option value="3" selected>3 ใบ</option><option value="5">5 ใบ</option><option value="10">10 ใบ</option></select></label>
     <button id="bTeams">⬆ Upload รายชื่อทีม (Teams Online)</button>
@@ -101,6 +102,7 @@ dialog td input{text-align:left;background:#fff;border-color:var(--line)}
 <input type="file" id="fWO" accept=".xlsx,.xls,.csv" hidden>
 <main>
   <div class="tabs"><button data-t="sum" class="on">สรุปรายงาน</button><button data-t="det">รายละเอียด</button></div>
+  <div class="filters" style="margin-bottom:10px"><button id="bAbsentView">ดูสาเหตุไม่ทำงาน</button><button id="bNotClosedView">ดูสาเหตุไม่ได้ปิดงาน</button></div>
   <section id="sum" class="card"></section>
   <section id="det" class="card" hidden>
     <div class="filters">
@@ -135,6 +137,12 @@ dialog td input{text-align:left;background:#fff;border-color:var(--line)}
 <dialog id="dW" style="width:620px"><b>Pipeline นำเข้างานที่ปิดได้</b>
   <div id="wSteps" style="margin-top:10px"></div>
   <div class="row"><button class="p" id="wClose">ปิด</button></div>
+</dialog>
+
+<dialog id="dCauseView" style="width:1000px"><b id="causeViewTitle">รายละเอียดสาเหตุ</b>
+  <div id="causeViewMeta" style="color:var(--mut);margin-top:5px;font-size:12px"></div>
+  <div id="causeViewTable" style="overflow:auto;max-height:68vh;margin-top:10px"></div>
+  <div class="row"><button class="p" id="causeViewClose">ปิด</button></div>
 </dialog>
 
 <dialog id="dC" style="width:480px"><b>เชื่อมต่อ Supabase (Report INOC 2026)</b>
@@ -257,18 +265,52 @@ function span(rows,i,keys){
 }
 const pct=(a,b)=>b?(a/b*100):null;
 const cls=p=>p===null?'':p>=95?'good':p<85?'warn':'';
+let causeSummaryMode='all';
 function renderSum(){
-  const date=$('date').value, rows=rosterRows(), T={teams:0,active:0,plan:0,actual:0,jobs:0};
+  const date=$('date').value, rows=rosterRows(), T={teams:0,active:0,plan:0,actual:0,jobs:0}, ratioMode=$('ratioMode').value;
+  const ratioLabel=ratioMode==='actual_active'?'% Actual/Active':'% Actual/Plan', ratioOf=c=>ratioMode==='actual_active'?pct(c.actual,c.active):pct(c.actual,c.plan), missingOf=c=>Math.max((ratioMode==='actual_active'?c.active:c.plan)-c.actual,0);
   let h=`<div class="ttl"><span>สรุปรายงาน${skillF()?' ('+skillF()+')':''}</span><span>${date?fmtD(date):''}</span></div>
-  <table><thead><tr><th>Associate Director</th><th>Manager Area</th><th>Cluster Leader</th><th>Province</th><th>Active</th><th>Plan</th><th>Actual</th><th>ขาด</th><th>% Actual/Plan</th><th>งานที่ปิดได้</th></tr></thead><tbody>`;
+  <table><thead><tr><th>Associate Director</th><th>Manager Area</th><th>Cluster Leader</th><th>Province</th><th>Active</th><th>Plan</th><th>Actual</th><th>ขาด</th><th>${ratioLabel}</th><th>งานที่ปิดได้</th></tr></thead><tbody>`;
   rows.forEach((r,i)=>{
     const c=calc(r.province,date); for(const k in T) T[k]+=c[k];
-    const p=pct(c.actual,c.plan), sa=span(rows,i,['ad_eas']), sm=span(rows,i,['ad_eas','mgr']), sl=span(rows,i,['ad_eas','mgr','cluster_leader']);
+    const p=ratioOf(c), sa=span(rows,i,['ad_eas']), sm=span(rows,i,['ad_eas','mgr']), sl=span(rows,i,['ad_eas','mgr','cluster_leader']);
     h+='<tr>'+(sa?`<td rowspan="${sa}">${esc(r.ad_eas)}</td>`:'')+(sm?`<td class="l" rowspan="${sm}">${esc(r.mgr)}</td>`:'')+(sl?`<td class="l" rowspan="${sl}">${esc(r.cluster_leader)}</td>`:'')
-      +`<td><b>${esc(r.province)}</b></td><td>${c.active}</td><td>${c.plan}</td><td>${c.actual}</td><td>${Math.max(c.plan-c.actual,0)}</td><td class="${cls(p)}">${p===null?'-':p.toFixed(1)+'%'}</td><td>${c.jobs}</td></tr>`;
+      +`<td><b>${esc(r.province)}</b></td><td>${c.active}</td><td>${c.plan}</td><td>${c.actual}</td><td>${missingOf(c)}</td><td class="${cls(p)}">${p===null?'-':p.toFixed(1)+'%'}</td><td>${c.jobs}</td></tr>`;
   });
-  const tp=pct(T.actual,T.plan);
-  h+=`<tr class="tot"><td colspan="4">รวมทั้งหมด</td><td>${T.active}</td><td>${T.plan}</td><td>${T.actual}</td><td>${Math.max(T.plan-T.actual,0)}</td><td class="${cls(tp)}">${tp===null?'-':tp.toFixed(1)+'%'}</td><td>${T.jobs}</td></tr></tbody></table>`;
+  const tp=ratioOf(T);
+  h+=`<tr class="tot"><td colspan="4">รวมทั้งหมด</td><td>${T.active}</td><td>${T.plan}</td><td>${T.actual}</td><td>${missingOf(T)}</td><td class="${cls(tp)}">${tp===null?'-':tp.toFixed(1)+'%'}</td><td>${T.jobs}</td></tr></tbody></table>`;
+
+  const jobSummary=rows.map(r=>{
+    const b={zero:0,one:0,two:0,more:0,total:0};
+    teamsNow().filter(t=>t.province===r.province).forEach(t=>{
+      const jobs=num((S.daily[key(date,t.team_id)]||{}).jobs_closed)||0;b.total++;
+      if(jobs===0)b.zero++;else if(jobs===1)b.one++;else if(jobs===2)b.two++;else b.more++;
+    });
+    return b;
+  }), JT={zero:0,one:0,two:0,more:0,total:0};
+  h+=`<div class="ttl" style="margin-top:18px"><span>สรุปจำนวนทีมที่ปิดงานได้${skillF()?' ('+skillF()+')':''}</span><span>${date?fmtD(date):''}</span></div>
+  <table><thead><tr><th>Associate Director</th><th>Manager Area</th><th>Cluster Leader</th><th>Province</th><th>ปิดได้ 0 ใบ</th><th>ปิดได้ 1 ใบ</th><th>ปิดได้ 2 ใบ</th><th>ปิดได้ &gt; 2 ใบ</th><th>ทีมทั้งหมด</th></tr></thead><tbody>`;
+  rows.forEach((r,i)=>{
+    const b=jobSummary[i];for(const k in JT)JT[k]+=b[k];
+    const sa=span(rows,i,['ad_eas']),sm=span(rows,i,['ad_eas','mgr']),sl=span(rows,i,['ad_eas','mgr','cluster_leader']);
+    h+='<tr>'+(sa?`<td rowspan="${sa}">${esc(r.ad_eas)}</td>`:'')+(sm?`<td class="l" rowspan="${sm}">${esc(r.mgr)}</td>`:'')+(sl?`<td class="l" rowspan="${sl}">${esc(r.cluster_leader)}</td>`:'')
+      +`<td><b>${esc(r.province)}</b></td><td>${b.zero}</td><td>${b.one}</td><td>${b.two}</td><td>${b.more}</td><td><b>${b.total}</b></td></tr>`;
+  });
+  h+=`<tr class="tot"><td colspan="4">รวมทั้งหมด</td><td>${JT.zero}</td><td>${JT.one}</td><td>${JT.two}</td><td>${JT.more}</td><td>${JT.total}</td></tr></tbody></table>`;
+
+  const missingReasons=[];
+  teamsNow().forEach(t=>{
+    const d=S.daily[key(date,t.team_id)]||{}, active=num(d.team_active)||0, plan=num(d.work_plan)||0, actual=num(d.work_actual)||0;
+    if((ratioMode==='actual_active'?active:plan)<=actual)return;
+    const reason=String(d.absent_reason||'').trim();if(reason)missingReasons.push(reason);
+  });
+  const reasonSummary=groupReasonStats(missingReasons,'absent');
+  h+=`<div class="ttl" style="margin-top:18px"><span>สรุปการลงสาเหตุของทีมที่ขาด (${ratioMode==='actual_active'?'Active เทียบ Actual':'Plan เทียบ Actual'})</span><span>${date?fmtD(date):''}</span></div>
+  <table><thead><tr><th>สาเหตุ</th><th>จำนวนทีม</th></tr></thead><tbody>`;
+  if(!reasonSummary.length)h+='<tr><td colspan="2" class="good">ยังไม่มีการลงสาเหตุ</td></tr>';
+  reasonSummary.forEach(g=>h+=`<tr><td class="l">${esc(g.label)}</td><td>${g.count}</td></tr>`);
+  h+='</tbody></table>';
+
   const limit=Number($('lowJobs').value)||1, gapMode=$('gapMode').value;
   const gapLabel=gapMode==='plan_active'?'Plan ต่ำกว่า Active':gapMode==='active_no_work'?'Active 1 แต่ไม่มีแผน/ผลงาน':'Actual ต่ำกว่า Plan', absentByProvince={},notClosedByProvince={};
   teamsNow().forEach(t=>{
@@ -278,15 +320,16 @@ function renderSum(){
     if(gap>0)(absentByProvince[t.province]||(absentByProvince[t.province]=[])).push(d.absent_reason||'ยังไม่ระบุสาเหตุ');
     if(low)(notClosedByProvince[t.province]||(notClosedByProvince[t.province]=[])).push(d.not_closed_reason||'ยังไม่ระบุสาเหตุ');
   });
-  const provinces=[...new Set([...Object.keys(absentByProvince),...Object.keys(notClosedByProvince)])].sort();
+  const causeProvinceKeys=causeSummaryMode==='absent'?Object.keys(absentByProvince):causeSummaryMode==='not_closed'?Object.keys(notClosedByProvince):[...Object.keys(absentByProvince),...Object.keys(notClosedByProvince)];
+  const provinces=[...new Set(causeProvinceKeys)].sort();
   const provinceTeamCounts={};teamsNow().forEach(t=>provinceTeamCounts[t.province]=(provinceTeamCounts[t.province]||0)+1);
-  h+=`<div class="ttl" style="margin-top:18px"><span>สรุปสาเหตุแยกตามจังหวัด</span><span>${date?fmtD(date):''}</span></div><table><thead><tr><th>Province</th><th>ทีมทั้งหมด</th><th>ประเภท</th><th>สาเหตุ</th><th>จำนวนทีม</th><th>สัดส่วนในจังหวัด</th></tr></thead><tbody>`;
+  h+=`<div class="ttl" style="margin-top:18px"><span>สรุปสาเหตุแยกตามจังหวัด</span><span><button data-cause-summary="all" class="${causeSummaryMode==='all'?'p':''}">ทั้งหมด</button> <button data-cause-summary="absent" class="${causeSummaryMode==='absent'?'p':''}">สาเหตุไม่ทำงาน</button> <button data-cause-summary="not_closed" class="${causeSummaryMode==='not_closed'?'p':''}">สาเหตุไม่ได้ปิดงาน</button> &nbsp; ${date?fmtD(date):''}</span></div><table><thead><tr><th>Province</th><th>ทีมทั้งหมด</th><th>ประเภท</th><th>สาเหตุ</th><th>จำนวนทีม</th><th>สัดส่วนในจังหวัด</th></tr></thead><tbody>`;
   if(!provinces.length)h+='<tr><td colspan="6" class="good">ไม่พบทีมเข้าเงื่อนไข</td></tr>';
   provinces.forEach(p=>{
     const summaries=[
-      {type:`ไม่มาทำงาน (${gapLabel})`,items:groupReasonStats(absentByProvince[p]||[],'absent'),total:(absentByProvince[p]||[]).length},
-      {type:`ปิดงานไม่ได้ / ได้น้อยกว่า ${limit} ใบ`,items:groupReasonStats(notClosedByProvince[p]||[],'not_closed'),total:(notClosedByProvince[p]||[]).length}
-    ].filter(s=>s.items.length);
+      {mode:'absent',type:`ไม่มาทำงาน (${gapLabel})`,items:groupReasonStats(absentByProvince[p]||[],'absent'),total:(absentByProvince[p]||[]).length},
+      {mode:'not_closed',type:`ปิดงานไม่ได้ / ได้น้อยกว่า ${limit} ใบ`,items:groupReasonStats(notClosedByProvince[p]||[],'not_closed'),total:(notClosedByProvince[p]||[]).length}
+    ].filter(s=>s.items.length&&(causeSummaryMode==='all'||s.mode===causeSummaryMode));
     const provinceRows=summaries.reduce((n,s)=>n+s.items.length,0),provinceTotal=provinceTeamCounts[p]||0;let provinceShown=false;
     summaries.forEach(s=>s.items.forEach((g,i)=>{
       h+=`<tr>${!provinceShown?`<td rowspan="${provinceRows}"><b>${esc(p)}</b></td><td rowspan="${provinceRows}"><b>${provinceTotal}</b></td>`:''}${i===0?`<td class="l" rowspan="${s.items.length}"><b>${esc(s.type)}</b><br><small>เข้าเงื่อนไข ${s.total} ทีม</small></td>`:''}<td class="l">${esc(g.label)}</td><td>${g.count}</td><td>${provinceTotal?(g.count/provinceTotal*100).toFixed(1)+'%':'-'}</td></tr>`;
@@ -295,10 +338,26 @@ function renderSum(){
   });
   h+='</tbody></table>';
   $('sum').innerHTML=h;
+  document.querySelectorAll('[data-cause-summary]').forEach(b=>b.onclick=()=>{causeSummaryMode=b.dataset.causeSummary;renderSum()});
 }
 
 // ---------- detail ----------
 const clOf=p=>(S.roster.find(r=>r.province===p)||{}).cluster_leader||'';
+function showCauseView(type){
+  const date=$('date').value, ratioMode=$('ratioMode').value, limit=Number($('lowJobs').value)||1;
+  const absent=type==='absent', reasonKey=absent?'absent_reason':'not_closed_reason';
+  const list=teamsNow().map(t=>({t,d:S.daily[key(date,t.team_id)]||{}})).filter(({d})=>{
+    const active=num(d.team_active)||0,plan=num(d.work_plan)||0,actual=num(d.work_actual)||0,jobs=num(d.jobs_closed)||0;
+    const hasReason=String(d[reasonKey]||'').trim()!=='';
+    return hasReason||(absent?(ratioMode==='actual_active'?active>actual:plan>actual):jobs<limit);
+  }).sort((a,b)=>a.t.province.localeCompare(b.t.province)||a.t.team_id.localeCompare(b.t.team_id));
+  $('causeViewTitle').textContent=absent?'สาเหตุไม่ทำงาน':'สาเหตุไม่ได้ปิดงาน';
+  $('causeViewMeta').textContent=`${fmtD(date)} · ${skillF()||'ทุก Skill'} · แสดงทุกสาเหตุที่บันทึกไว้ และทีมที่เข้าเงื่อนไข${absent?` (${ratioMode==='actual_active'?'Active มากกว่า Actual':'Plan มากกว่า Actual'})`:` (ปิดได้น้อยกว่า ${limit} ใบ)`} · ${list.length} ทีม`;
+  let h=`<table><thead><tr><th>Cluster Leader</th><th>Province</th><th>Skill</th><th>Team</th>${absent?'<th>Active</th><th>Plan</th><th>Actual</th>':'<th>งานที่ปิดได้</th>'}<th>สาเหตุ</th></tr></thead><tbody>`;
+  if(!list.length)h+=`<tr><td colspan="${absent?8:6}" class="good">ไม่พบทีมเข้าเงื่อนไข</td></tr>`;
+  list.forEach(({t,d})=>{const reason=String(d[reasonKey]||'').trim();h+=`<tr><td class="l">${esc(clOf(t.province))}</td><td><b>${esc(t.province)}</b></td><td>${esc(t.skill)}</td><td class="tm">${esc(cleanTeamName(t.team_name||t.team_id))}</td>${absent?`<td>${num(d.team_active)||0}</td><td>${num(d.work_plan)||0}</td><td>${num(d.work_actual)||0}</td>`:`<td>${num(d.jobs_closed)||0}</td>`}<td class="l ${reason?'':'warn'}">${esc(reason||'ยังไม่ระบุสาเหตุ')}</td></tr>`});
+  $('causeViewTable').innerHTML=h+'</tbody></table>';$('dCauseView').showModal();
+}
 function renderDet(){
   const date=$('date').value, q=$('fQ').value.trim().toLowerCase(), ac=$('fAct').value, pl=$('fPlan').value, jb=$('fJob').value, cl=$('fCL').value;
   const list=teamsNow().filter(t=>(!cl||clOf(t.province)===cl)&&(!q||(t.team_name||t.team_id).toLowerCase().includes(q))).sort((a,b)=>a.province.localeCompare(b.province)||a.team_id.localeCompare(b.team_id));
@@ -312,7 +371,7 @@ function renderDet(){
     const jobs=num(d.jobs_closed)||0;
     if(jb==='eq0'&&jobs!==0)return;
     if(jb.startsWith('lt')&&!(jobs<Number(jb.slice(2))))return; n++;
-    const f=(k,cl,ty)=>ty==='text'?`<td class="x"><textarea rows="1" placeholder="พิมพ์สาเหตุ..." data-t="${esc(t.team_id)}" data-k="${k}">${esc(d[k])}</textarea></td>`:`<td${ty?'':' class="n"'}><input ${cl?'class="t"':''} type="${ty||'number'}" ${ty?'':'min="0"'} data-t="${esc(t.team_id)}" data-k="${k}" value="${esc(d[k])}"></td>`;
+    const f=(k,cl,ty)=>ty==='text'?`<td class="x"><textarea rows="1" placeholder="พิมพ์สาเหตุ..." data-t="${esc(t.team_id)}" data-k="${k}">${esc(d[k])}</textarea></td>`:`<td${ty?'':' class="n"'}><input ${cl?'class="t"':''} type="${ty||'number'}" min="0" ${['team_active','work_plan','work_actual'].includes(k)?'max="1" step="1" inputmode="numeric"':''} data-t="${esc(t.team_id)}" data-k="${k}" value="${esc(d[k])}"></td>`;
     const shownTeam=cleanTeamName(t.team_name||t.team_id);
     h+=`<tr><td class="l">${esc(clOf(t.province))}</td><td>${esc(t.province)}</td><td>${esc(t.skill)}</td><td class="tm" title="${esc(shownTeam)}">${esc(shownTeam)}</td>${f('team_active')}${f('work_plan')}${f('work_actual')}${f('absent_reason',1,'text')}${f('jobs_closed')}${f('not_closed_reason',1,'text')}</tr>`;
   });
@@ -323,7 +382,13 @@ function queueDetailSave(e){
   const i=e.target; if(!i.dataset.t) return;
   const date=$('date').value, k=key(date,i.dataset.t);
   const d=S.daily[k]||(S.daily[k]={report_date:date,team_id:i.dataset.t,team_active:1,work_plan:1,work_actual:null,absent_reason:null,jobs_closed:null,not_closed_reason:null});
-  d[i.dataset.k]=i.type==='number'?num(i.value):(i.value||null);
+  const binary=['team_active','work_plan','work_actual'].includes(i.dataset.k), value=i.type==='number'?num(i.value):(i.value||null);
+  if(binary&&(value!==0&&value!==1)){
+    i.value=d[i.dataset.k]??0;
+    status('บันทึกไม่ได้: Active, Plan และ Actual ใส่ได้เฉพาะ 0 หรือ 1',1);
+    return;
+  }
+  d[i.dataset.k]=value;
   pending[k]=d; clearTimeout(timer);
   status('กำลังบันทึกข้อมูล...');
   timer=setTimeout(async()=>{const rows=Object.values(pending);pending={};try{await upsert('daily_follow',rows,'report_date,team_id');renderSum()}catch(e){status('บันทึกไม่สำเร็จ กำลังคืนค่าจากฐานข้อมูล: '+e.message,1);try{await pull();refresh()}catch(_){}}},500);
@@ -364,34 +429,46 @@ async function importTeams(file,date){
   if(miss.length){add('3. ตรวจ Column','fail','ขาดคอลัมน์: '+miss.join(', '));try{await logUpload('teams',file.name,false,{steps,missing:miss})}catch(_){}showPipeline('Pipeline นำเข้ารายชื่อทีม',steps,false);return}
   add('3. ตรวจ Column','ok',`ครบ ${need.length}/${need.length} คอลัมน์ที่จำเป็น`);
   const ix=n=>rows[h].indexOf(n);
-  let pv=null,sp=null,sk=null;const found=new Set(),tOut=[],dOut=[];
-  rows.slice(h+1).forEach(r=>{
+  let pv=null,sp=null,sk=null;const found=new Set(),tOut=[],dOut=[],invalid=[];
+  const bin=(v,row,col)=>{
+    if(v===null||v===undefined||String(v).trim()===''){invalid.push(`แถว ${row} · ${col} = ว่าง`);return null}
+    const n=Number(v);
+    if(n!==0&&n!==1){invalid.push(`แถว ${row} · ${col} = ${String(v)}`);return null}
+    return n;
+  };
+  rows.slice(h+1).forEach((r,offset)=>{
     if(r[ix('Province')]){ if(String(r[ix('Province')]).trim()!==pv) sk=null; pv=String(r[ix('Province')]).trim() }
     if(r[ix('Supervisor')]) sp=String(r[ix('Supervisor')]).trim();
     if(r[ix('Skill')]) sk=String(r[ix('Skill')]).trim();
     const t=r[ix('Team')]; if(!t||pv==='Total') return;
     const name=cleanTeamName(t), id=tcode(name); found.add(id);
     const old=S.teams[id]||{};
-    tOut.push(S.teams[id]={team_id:id,team_name:name,region:'EAS',province:pv,skill:sk||old.skill||(/-NOD-/.test(id)?'NODE':'OFC'),supervisor:sp,is_current:true});
-    const k=key(date,id), d=S.daily[k]||(S.daily[k]={report_date:date,team_id:id});
-    d.team_active=num(r[ix('Team Total')])??0; d.work_plan=num(r[ix('Working Plan')])??0; d.work_actual=num(r[ix('Clock in')])??0;
+    const rowNo=h+offset+2, active=bin(r[ix('Team Total')],rowNo,'Active'), plan=bin(r[ix('Working Plan')],rowNo,'Plan'), actual=bin(r[ix('Clock in')],rowNo,'Actual');
+    tOut.push({team_id:id,team_name:name,region:'EAS',province:pv,skill:sk||old.skill||(/-NOD-/.test(id)?'NODE':'OFC'),supervisor:sp,is_current:true});
+    const k=key(date,id), previous=S.daily[k]||{report_date:date,team_id:id};
+    const d={...previous,team_active:active,work_plan:plan,work_actual:Math.max(num(previous.work_actual)||0,actual??0)};
     dOut.push(d);
   });
-  if(!found.size){add('4. แปลงข้อมูลทีม','fail','ไม่พบรายการทีมที่นำเข้าได้');try{await logUpload('teams',file.name,false,{steps})}catch(_){}showPipeline('Pipeline นำเข้ารายชื่อทีม',steps,false);return}
+  if(invalid.length){add('4. ตรวจค่า Active / Plan / Actual','fail',`ต้องเป็น 0 หรือ 1 เท่านั้น: ${invalid.slice(0,5).join(' | ')}${invalid.length>5?` · และอีก ${invalid.length-5} จุด`:''}`);try{await logUpload('teams',file.name,false,{steps,invalid})}catch(_){}showPipeline('Pipeline นำเข้ารายชื่อทีม',steps,false);return}
+  add('4. ตรวจค่า Active / Plan / Actual','ok','ทุกค่าเป็น 0 หรือ 1 · Actual เดิมที่เป็น 1 จะไม่ถูกลดเป็น 0');
+  if(!found.size){add('5. แปลงข้อมูลทีม','fail','ไม่พบรายการทีมที่นำเข้าได้');try{await logUpload('teams',file.name,false,{steps})}catch(_){}showPipeline('Pipeline นำเข้ารายชื่อทีม',steps,false);return}
   const gone=Object.values(S.teams).filter(t=>t.is_current!==false&&!found.has(t.team_id));
   gone.forEach(t=>{t.is_current=false;tOut.push(t)});
-  add('4. แปลงข้อมูลทีม','ok',`พร้อมบันทึก ${found.size} ทีม วันที่ ${fmtD(date)}${gone.length?` · ถอดทีมเดิม ${gone.length} ทีม`:''}`);
-  try{await upsert('teams',tOut,'team_id');await upsert('daily_follow',dOut,'report_date,team_id');add('5. บันทึก Supabase','ok',`บันทึก teams ${tOut.length} แถว และ daily_follow ${dOut.length} แถว`)}
-  catch(e){add('5. บันทึก Supabase','fail',e.message);try{await logUpload('teams',file.name,false,{steps})}catch(_){}showPipeline('Pipeline นำเข้ารายชื่อทีม',steps,false);return}
+  tOut.forEach(t=>S.teams[t.team_id]=t);dOut.forEach(d=>S.daily[key(d.report_date,d.team_id)]=d);
+  add('5. แปลงข้อมูลทีม','ok',`พร้อมบันทึก ${found.size} ทีม วันที่ ${fmtD(date)}${gone.length?` · ถอดทีมเดิม ${gone.length} ทีม`:''}`);
+  try{await upsert('teams',tOut,'team_id');await upsert('daily_follow',dOut,'report_date,team_id');add('6. บันทึก Supabase','ok',`บันทึก teams ${tOut.length} แถว และ daily_follow ${dOut.length} แถว`)}
+  catch(e){add('6. บันทึก Supabase','fail',e.message);try{await logUpload('teams',file.name,false,{steps})}catch(_){}showPipeline('Pipeline นำเข้ารายชื่อทีม',steps,false);return}
   try{
     await pull();
     const savedTeams=[...found].filter(id=>S.teams[id]?.is_current!==false).length;
     const savedDaily=[...found].filter(id=>S.daily[key(date,id)]).length;
     if(savedTeams!==found.size||savedDaily!==found.size) throw new Error(`คาด ${found.size} ทีม แต่พบ teams ${savedTeams} / daily_follow ${savedDaily}`);
-    add('6. Recheck จาก Database','ok',`อ่านกลับตรงกัน ${savedTeams} ทีม / ${savedDaily} รายการรายวัน`);
-  }catch(e){add('6. Recheck จาก Database','fail',e.message);try{await logUpload('teams',file.name,false,{steps})}catch(_){}showPipeline('Pipeline นำเข้ารายชื่อทีม',steps,false);return}
-  try{await logUpload('teams',file.name,true,{date,teams:found.size,removed:gone.length,steps});add('7. บันทึก Upload Log','ok','บันทึกประวัติการนำเข้าแล้ว')}
-  catch(e){add('7. บันทึก Upload Log','fail',e.message);showPipeline('Pipeline นำเข้ารายชื่อทีม',steps,false);return}
+    const mismatch=dOut.filter(x=>{const saved=S.daily[key(date,x.team_id)];return !saved||saved.team_active!==x.team_active||saved.work_plan!==x.work_plan||saved.work_actual!==x.work_actual});
+    if(mismatch.length) throw new Error(`ค่า Active/Plan/Actual อ่านกลับไม่ตรง ${mismatch.length} ทีม: ${mismatch.slice(0,5).map(x=>x.team_id).join(', ')}`);
+    add('7. Recheck จาก Database','ok',`อ่านกลับตรงกัน ${savedTeams} ทีม / ${savedDaily} รายการรายวัน · ค่า Active/Plan/Actual ถูกต้อง`);
+  }catch(e){add('7. Recheck จาก Database','fail',e.message);try{await logUpload('teams',file.name,false,{steps})}catch(_){}showPipeline('Pipeline นำเข้ารายชื่อทีม',steps,false);return}
+  try{await logUpload('teams',file.name,true,{date,teams:found.size,removed:gone.length,steps});add('8. บันทึก Upload Log','ok','บันทึกประวัติการนำเข้าแล้ว')}
+  catch(e){add('8. บันทึก Upload Log','fail',e.message);showPipeline('Pipeline นำเข้ารายชื่อทีม',steps,false);return}
   $('date').value=date; refresh();
   status(`อัปเดตรายชื่อทีม ${found.size} ทีม + Active/Plan/Actual วันที่ ${fmtD(date)}${gone.length?` · ถอดออก ${gone.length} ทีม`:''}`);
   showPipeline('Pipeline นำเข้ารายชื่อทีม',steps,true);
@@ -529,7 +606,10 @@ document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>{
   document.querySelectorAll('.tabs button').forEach(x=>x.classList.toggle('on',x===b));
   $('sum').hidden=b.dataset.t!=='sum';$('det').hidden=b.dataset.t!=='det';refresh();
 });
-['date','skill','gapMode'].forEach(i=>$(i).onchange=refresh);
+$('bAbsentView').onclick=()=>showCauseView('absent');
+$('bNotClosedView').onclick=()=>showCauseView('not_closed');
+$('causeViewClose').onclick=()=>$('dCauseView').close();
+['date','skill','ratioMode','gapMode'].forEach(i=>$(i).onchange=refresh);
 $('lowJobs').onchange=async()=>{
   refresh();const value=Number($('lowJobs').value);
   try{await upsert('app_settings',[{setting_key:'low_jobs_threshold',setting_value:value,updated_at:new Date().toISOString()}],'setting_key');S.settings.low_jobs_threshold=value;status(`บันทึกเกณฑ์ปิดงานได้น้อยกว่า ${value} ใบแล้ว`)}
@@ -565,3 +645,4 @@ $('bRefresh').onclick=()=>syncFromSupabase(true);
 </script>
 </body>
 </html>
+
