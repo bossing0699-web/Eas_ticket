@@ -31,6 +31,8 @@ thead th{background:#e7edf6;position:sticky;top:0;z-index:2;box-shadow:0 1px 0 v
 #sum{max-height:none;overflow:visible}
 #sum table{min-width:0;width:100%;table-layout:auto}
 #sum th,#sum td{white-space:normal;overflow-wrap:anywhere;font-size:clamp(10px,.8vw,14px);padding:clamp(3px,.45vw,7px)}
+.reason-pair{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;align-items:start;margin-top:18px}
+.reason-pair>div{min-width:0}.reason-pair .ttl{margin-top:0!important}
 #detTbl{overflow:auto;max-height:calc(100vh - 260px);-webkit-overflow-scrolling:touch}
 #detTbl table{min-width:900px}
 th.n,td.n{width:68px;min-width:68px;max-width:68px;padding-left:3px;padding-right:3px}
@@ -38,6 +40,7 @@ td.n input{min-width:0;padding:3px 2px}
 td.x{padding:3px;vertical-align:top;text-align:left;white-space:normal}
 td.x textarea{display:block;width:100%;min-width:200px;min-height:34px;resize:both;overflow:auto;font:inherit;line-height:1.35;padding:5px 7px;border:1px solid var(--line);border-radius:4px;background:#fafbfd;white-space:pre-wrap;word-break:break-word}
 td.x textarea:focus{border-color:var(--pri);background:#fff;outline:0}
+td.x select{display:block;width:100%;min-width:150px;padding:6px 8px;border:1px solid var(--line);border-radius:4px;background:#fafbfd;font:inherit}
 input[type=number]{-moz-appearance:textfield;appearance:textfield}
 input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
 td.tm{max-width:clamp(180px,26vw,420px)}
@@ -89,7 +92,7 @@ dialog td input{text-align:left;background:#fff;border-color:var(--line)}
     <label>Skill <select id="skill"><option value="">ทั้งหมด</option><option>OFC</option><option>NODE</option></select></label>
     <label>สูตรเปอร์เซ็นต์ <select id="ratioMode"><option value="actual_plan">% Actual/Plan</option><option value="actual_active" selected>% Actual/Active</option></select></label>
     <label>เงื่อนไขทีมขาด <select id="gapMode"><option value="actual_plan">Actual ต่ำกว่า Plan</option><option value="plan_active">Plan ต่ำกว่า Active (ภัยธรรมชาติ)</option><option value="active_no_work">Active 1 / Plan 0 / Actual 0 / ปิดงาน 0</option></select></label>
-    <label>งานปิดได้น้อยกว่า <select id="lowJobs"><option value="1" selected>1 ใบ</option><option value="2">2 ใบ</option><option value="3">3 ใบ</option><option value="5">5 ใบ</option><option value="10">10 ใบ</option></select></label>
+    <label>ปิดงานได้ <select id="lowJobs"><option value="0" selected>0 ใบ</option><option value="1">1 ใบ</option><option value="2">2 ใบ</option></select></label>
     <button id="bTeams">⬆ Upload รายชื่อทีม (Teams Online)</button>
     <button id="bWO">⬆ Upload งานที่ปิดได้ (WO)</button>
     <button id="bOpen">⬆ Upload ใบงาน Open</button>
@@ -110,7 +113,7 @@ dialog td input{text-align:left;background:#fff;border-color:var(--line)}
       <select id="fCL"></select>
       <select id="fPlan"><option value="">Plan ทั้งหมด</option><option value="1">Plan = 1 (มีแผนทำงาน)</option><option value="0">Plan = 0 (ไม่มีแผน)</option></select>
       <select id="fAct"><option value="">Actual ทั้งหมด</option><option value="1">Actual = 1 (Clock in)</option><option value="0">Actual = 0 (ไม่ Clock in)</option><option value="gap">Plan &gt; Actual (ไม่มาตามแผน)</option></select>
-      <select id="fJob"><option value="">งานที่ปิดได้ ทั้งหมด</option><option value="eq0">งานที่ปิดได้ = 0</option><option value="lt1">งานที่ปิดได้น้อยกว่า 1 ใบ</option><option value="lt2">งานที่ปิดได้น้อยกว่า 2 ใบ</option><option value="lt3">งานที่ปิดได้น้อยกว่า 3 ใบ</option></select>
+      <select id="fJob"><option value="">งานที่ปิดได้ ทั้งหมด</option><option value="eq0">งานที่ปิดได้ = 0 ใบ</option><option value="eq1">งานที่ปิดได้ = 1 ใบ</option><option value="eq2">งานที่ปิดได้ = 2 ใบ</option></select>
       <input id="fQ" placeholder="ค้นหาชื่อทีม / ID">
     </div>
     <div id="detTbl"></div>
@@ -169,6 +172,10 @@ const groupReasonStats=(list,type)=>{
   return [...groups.values()].sort((a,b)=>b.count-a.count||a.label.localeCompare(b.label,'th'));
 };
 const groupReasons=(list,type)=>groupReasonStats(list,type).map(g=>`${g.label} (${g.count})`);
+const groupReasonByProvinceSkill=(rows,type)=>{
+  const buckets=new Map();rows.forEach(r=>{const k=`${r.province}|${r.skill||''}`,b=buckets.get(k)||{province:r.province,skill:r.skill||'',reasons:[]};b.reasons.push(r.reason);buckets.set(k,b)});
+  return [...buckets.values()].flatMap(b=>groupReasonStats(b.reasons,type).map(g=>({province:b.province,skill:b.skill,label:g.label,count:g.count}))).sort((a,b)=>a.province.localeCompare(b.province)||a.skill.localeCompare(b.skill)||b.count-a.count||a.label.localeCompare(b.label,'th'));
+};
 const num=v=>(v===null||v===undefined||v==='')?null:(isNaN(Number(v))?null:Number(v));
 const key=(d,t)=>d+'|'+t;
 const tcode=s=>String(s??'').trim().split(/\s+/)[0];   // รหัสทีม เช่น CC-EA-CBR-OFC-001 (ไม่ผูกกับ 【ON/OFF】)
@@ -220,7 +227,7 @@ async function pull(){
   S.openTickets={};op.forEach(x=>S.openTickets[key(x.report_date,x.province)]=x.open_count);
   S.causeGroups=cg;
   S.settings={};settings.forEach(s=>S.settings[s.setting_key]=s.setting_value);
-  if(S.settings.low_jobs_threshold!=null&&[...$('lowJobs').options].some(o=>o.value===String(S.settings.low_jobs_threshold)))$('lowJobs').value=String(S.settings.low_jobs_threshold);
+  if(S.settings.jobs_closed_value!=null&&[...$('lowJobs').options].some(o=>o.value===String(S.settings.jobs_closed_value)))$('lowJobs').value=String(S.settings.jobs_closed_value);
 }
 async function testConnection(){
   const tables=['roster','teams','daily_follow','open_ticket_daily','upload_log','cause_group_rules','app_settings'], counts={};
@@ -285,7 +292,7 @@ function renderSum(){
     });
     return b;
   }), JT={zero:0,one:0,two:0,more:0,total:0};
-  h+=`<div class="ttl" style="margin-top:18px"><span>สรุปจำนวนทีมที่ปิดงานได้${skillF()?' ('+skillF()+')':''}</span><span>${date?fmtD(date):''}</span></div>
+  h+=`<div class="ttl" style="margin-top:18px"><span>สรุปจำนวนทีมที่ปิดงานได้${skillF()?' ('+skillF()+')':''}</span></div>
   <table><thead><tr><th>Associate Director</th><th>Manager Area</th><th>Cluster Leader</th><th>Province</th><th>ปิดได้ 0 ใบ</th><th>ปิดได้ 1 ใบ</th><th>ปิดได้ 2 ใบ</th><th>ปิดได้ &gt; 2 ใบ</th><th>ทีมทั้งหมด</th></tr></thead><tbody>`;
   rows.forEach((r,i)=>{
     const b=jobSummary[i];for(const k in JT)JT[k]+=b[k];
@@ -299,45 +306,51 @@ function renderSum(){
   teamsNow().forEach(t=>{
     const d=S.daily[key(date,t.team_id)]||{}, active=num(d.team_active)||0, plan=num(d.work_plan)||0, actual=num(d.work_actual)||0;
     if((ratioMode==='actual_active'?active:plan)<=actual)return;
-    const reason=String(d.absent_reason||'').trim();if(reason)missingReasons.push(reason);
+    const reason=String(d.absent_reason||'').trim();if(reason)missingReasons.push({province:t.province,skill:t.skill,reason});
   });
-  const reasonSummary=groupReasonStats(missingReasons,'absent');
-  h+=`<div class="ttl" style="margin-top:18px"><span>สรุปการลงสาเหตุของทีมที่ขาด (${ratioMode==='actual_active'?'Active เทียบ Actual':'Plan เทียบ Actual'})</span><span>${date?fmtD(date):''}</span></div>
-  <table><thead><tr><th>สาเหตุ</th><th>จำนวนทีม</th></tr></thead><tbody>`;
-  if(!reasonSummary.length)h+='<tr><td colspan="2" class="good">ยังไม่มีการลงสาเหตุ</td></tr>';
-  reasonSummary.forEach(g=>h+=`<tr><td class="l">${esc(g.label)}</td><td>${g.count}</td></tr>`);
-  h+='</tbody></table>';
+  const reasonSummary=groupReasonByProvinceSkill(missingReasons,'absent');
+  h+=`<div class="reason-pair"><div><div class="ttl"><span>สรุปสาเหตุทีมที่ไม่ทำงาน</span></div>
+  <table><thead><tr><th>Province</th><th>Skill</th><th>สาเหตุ</th><th>จำนวนทีม</th></tr></thead><tbody>`;
+  if(!reasonSummary.length)h+='<tr><td colspan="4" class="good">ยังไม่มีการลงสาเหตุ</td></tr>';
+  reasonSummary.forEach((g,i)=>{
+    const sp=span(reasonSummary,i,['province']),ss=span(reasonSummary,i,['province','skill']);
+    h+=`<tr>${sp?`<td rowspan="${sp}"><b>${esc(g.province)}</b></td>`:''}${ss?`<td rowspan="${ss}">${esc(g.skill)}</td>`:''}<td class="l">${esc(g.label)}</td><td>${g.count}</td></tr>`;
+  });
+  h+='</tbody></table></div>';
 
-  const limit=Number($('lowJobs').value)||1,notClosedReasons=[];
+  const jobsValue=Number($('lowJobs').value),notClosedReasons=[];
   teamsNow().forEach(t=>{
-    const d=S.daily[key(date,t.team_id)]||{},jobs=num(d.jobs_closed)||0;if(jobs>=limit)return;
-    const reason=String(d.not_closed_reason||'').trim();if(reason)notClosedReasons.push(reason);
+    const d=S.daily[key(date,t.team_id)]||{},jobs=num(d.jobs_closed)||0;if(jobs!==jobsValue)return;
+    const reason=String(d.not_closed_reason||'').trim();if(reason)notClosedReasons.push({province:t.province,skill:t.skill,reason});
   });
-  const notClosedSummary=groupReasonStats(notClosedReasons,'not_closed');
-  h+=`<div class="ttl" style="margin-top:18px"><span>สรุปสาเหตุที่ทีมปิดงานไม่ได้ / ได้น้อยกว่า ${limit} ใบ</span><span>${date?fmtD(date):''}</span></div>
-  <table><thead><tr><th>สาเหตุ</th><th>จำนวนทีม</th></tr></thead><tbody>`;
-  if(!notClosedSummary.length)h+='<tr><td colspan="2" class="good">ยังไม่มีการลงสาเหตุ</td></tr>';
-  notClosedSummary.forEach(g=>h+=`<tr><td class="l">${esc(g.label)}</td><td>${g.count}</td></tr>`);
-  h+='</tbody></table>';
+  const notClosedSummary=groupReasonByProvinceSkill(notClosedReasons,'not_closed');
+  h+=`<div><div class="ttl"><span>สรุปสาเหตุที่ทีมปิดงานได้</span></div>
+  <table><thead><tr><th>Province</th><th>Skill</th><th>สาเหตุ</th><th>จำนวนทีม</th></tr></thead><tbody>`;
+  if(!notClosedSummary.length)h+='<tr><td colspan="4" class="good">ยังไม่มีการลงสาเหตุ</td></tr>';
+  notClosedSummary.forEach((g,i)=>{
+    const sp=span(notClosedSummary,i,['province']),ss=span(notClosedSummary,i,['province','skill']);
+    h+=`<tr>${sp?`<td rowspan="${sp}"><b>${esc(g.province)}</b></td>`:''}${ss?`<td rowspan="${ss}">${esc(g.skill)}</td>`:''}<td class="l">${esc(g.label)}</td><td>${g.count}</td></tr>`;
+  });
+  h+='</tbody></table></div></div>';
 
   const gapMode=$('gapMode').value;
   const gapLabel=gapMode==='plan_active'?'Plan ต่ำกว่า Active':gapMode==='active_no_work'?'Active 1 แต่ไม่มีแผน/ผลงาน':'Actual ต่ำกว่า Plan', absentByProvince={},notClosedByProvince={};
   teamsNow().forEach(t=>{
     const d=S.daily[key(date,t.team_id)]; if(!d) return;
     const active=num(d.team_active)||0, plan=num(d.work_plan)||0, actual=num(d.work_actual)||0, jobs=num(d.jobs_closed)||0;
-    const gap=gapMode==='active_no_work'?(active===1&&plan===0&&actual===0&&jobs===0?1:0):Math.max(gapMode==='plan_active'?active-plan:plan-actual,0), low=jobs<limit;
+    const gap=gapMode==='active_no_work'?(active===1&&plan===0&&actual===0&&jobs===0?1:0):Math.max(gapMode==='plan_active'?active-plan:plan-actual,0), low=jobs===jobsValue;
     if(gap>0)(absentByProvince[t.province]||(absentByProvince[t.province]=[])).push(d.absent_reason||'ยังไม่ระบุสาเหตุ');
     if(low)(notClosedByProvince[t.province]||(notClosedByProvince[t.province]=[])).push(d.not_closed_reason||'ยังไม่ระบุสาเหตุ');
   });
   const causeProvinceKeys=causeSummaryMode==='absent'?Object.keys(absentByProvince):causeSummaryMode==='not_closed'?Object.keys(notClosedByProvince):[...Object.keys(absentByProvince),...Object.keys(notClosedByProvince)];
   const provinces=[...new Set(causeProvinceKeys)].sort();
   const provinceTeamCounts={};teamsNow().forEach(t=>provinceTeamCounts[t.province]=(provinceTeamCounts[t.province]||0)+1);
-  h+=`<div class="ttl" style="margin-top:18px"><span>สรุปสาเหตุแยกตามจังหวัด</span><span><button data-cause-summary="all" class="${causeSummaryMode==='all'?'p':''}">ทั้งหมด</button> <button data-cause-summary="absent" class="${causeSummaryMode==='absent'?'p':''}">สาเหตุไม่ทำงาน</button> <button data-cause-summary="not_closed" class="${causeSummaryMode==='not_closed'?'p':''}">สาเหตุไม่ได้ปิดงาน</button> &nbsp; ${date?fmtD(date):''}</span></div><table><thead><tr><th>Province</th><th>ทีมทั้งหมด</th><th>ประเภท</th><th>สาเหตุ</th><th>จำนวนทีม</th><th>สัดส่วนในจังหวัด</th></tr></thead><tbody>`;
+  h+=`<div class="ttl" style="margin-top:18px"><span>สรุปสาเหตุแยกตามจังหวัด</span><span><button data-cause-summary="all" class="${causeSummaryMode==='all'?'p':''}">ทั้งหมด</button> <button data-cause-summary="absent" class="${causeSummaryMode==='absent'?'p':''}">สาเหตุไม่ทำงาน</button> <button data-cause-summary="not_closed" class="${causeSummaryMode==='not_closed'?'p':''}">สาเหตุไม่ได้ปิดงาน</button></span></div><table><thead><tr><th>Province</th><th>ทีมทั้งหมด</th><th>ประเภท</th><th>สาเหตุ</th><th>จำนวนทีม</th><th>สัดส่วนในจังหวัด</th></tr></thead><tbody>`;
   if(!provinces.length)h+='<tr><td colspan="6" class="good">ไม่พบทีมเข้าเงื่อนไข</td></tr>';
   provinces.forEach(p=>{
     const summaries=[
       {mode:'absent',type:`ไม่มาทำงาน (${gapLabel})`,items:groupReasonStats(absentByProvince[p]||[],'absent'),total:(absentByProvince[p]||[]).length},
-      {mode:'not_closed',type:`ปิดงานไม่ได้ / ได้น้อยกว่า ${limit} ใบ`,items:groupReasonStats(notClosedByProvince[p]||[],'not_closed'),total:(notClosedByProvince[p]||[]).length}
+      {mode:'not_closed',type:`ปิดงานได้ ${jobsValue} ใบ`,items:groupReasonStats(notClosedByProvince[p]||[],'not_closed'),total:(notClosedByProvince[p]||[]).length}
     ].filter(s=>s.items.length&&(causeSummaryMode==='all'||s.mode===causeSummaryMode));
     const provinceRows=summaries.reduce((n,s)=>n+s.items.length,0),provinceTotal=provinceTeamCounts[p]||0;let provinceShown=false;
     summaries.forEach(s=>s.items.forEach((g,i)=>{
@@ -363,11 +376,17 @@ function renderDet(){
     if((ac==='1'||ac==='0')&&((aa>0?'1':'0')!==ac)) return;
     if(pl!==''&&((num(d.work_plan)||0)>0?'1':'0')!==pl) return;
     const jobs=num(d.jobs_closed)||0;
-    if(jb==='eq0'&&jobs!==0)return;
-    if(jb.startsWith('lt')&&!(jobs<Number(jb.slice(2))))return; n++;
-    const f=(k,cl,ty)=>ty==='text'?`<td class="x"><textarea rows="1" placeholder="พิมพ์สาเหตุ..." data-t="${esc(t.team_id)}" data-k="${k}">${esc(d[k])}</textarea></td>`:`<td${ty?'':' class="n"'}><input ${cl?'class="t"':''} type="${ty||'number'}" min="0" ${['team_active','work_plan','work_actual'].includes(k)?'max="1" step="1" inputmode="numeric"':''} data-t="${esc(t.team_id)}" data-k="${k}" value="${esc(d[k])}"></td>`;
+    if(jb.startsWith('eq')&&jobs!==Number(jb.slice(2)))return; n++;
+    const f=(k,cl,ty)=>{
+      if(ty==='text')return`<td class="x"><textarea rows="1" placeholder="พิมพ์สาเหตุ..." data-t="${esc(t.team_id)}" data-k="${k}">${esc(d[k])}</textarea></td>`;
+      if(ty==='absent'){
+        const current=String(d[k]||''),options=['','ลากิจ','ลาป่วย','รถเสีย'];if(current&&!options.includes(current))options.push(current);
+        return`<td class="x"><select data-t="${esc(t.team_id)}" data-k="${k}">${options.map(v=>`<option value="${esc(v)}" ${v===current?'selected':''}>${esc(v||'เลือกสาเหตุ')}</option>`).join('')}</select></td>`;
+      }
+      return`<td${ty?'':' class="n"'}><input ${cl?'class="t"':''} type="${ty||'number'}" min="0" ${['team_active','work_plan','work_actual'].includes(k)?'max="1" step="1" inputmode="numeric"':''} data-t="${esc(t.team_id)}" data-k="${k}" value="${esc(d[k])}"></td>`;
+    };
     const shownTeam=cleanTeamName(t.team_name||t.team_id);
-    h+=`<tr><td class="l">${esc(clOf(t.province))}</td><td>${esc(t.province)}</td><td>${esc(t.skill)}</td><td class="tm" title="${esc(shownTeam)}">${esc(shownTeam)}</td>${f('team_active')}${f('work_plan')}${f('work_actual')}${f('absent_reason',1,'text')}${f('jobs_closed')}${f('not_closed_reason',1,'text')}</tr>`;
+    h+=`<tr><td class="l">${esc(clOf(t.province))}</td><td>${esc(t.province)}</td><td>${esc(t.skill)}</td><td class="tm" title="${esc(shownTeam)}">${esc(shownTeam)}</td>${f('team_active')}${f('work_plan')}${f('work_actual')}${f('absent_reason',1,'absent')}${f('jobs_closed')}${f('not_closed_reason',1,'text')}</tr>`;
   });
   $('detTbl').innerHTML=h+`</tbody></table><div style="color:var(--mut);margin-top:6px">${n} ทีม · แก้ไขแล้วบันทึกอัตโนมัติ</div>`;
 }
@@ -639,7 +658,7 @@ document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>{
 ['date','skill','ratioMode','gapMode'].forEach(i=>$(i).onchange=refresh);
 $('lowJobs').onchange=async()=>{
   refresh();const value=Number($('lowJobs').value);
-  try{await upsert('app_settings',[{setting_key:'low_jobs_threshold',setting_value:value,updated_at:new Date().toISOString()}],'setting_key');S.settings.low_jobs_threshold=value;status(`บันทึกเกณฑ์ปิดงานได้น้อยกว่า ${value} ใบแล้ว`)}
+  try{await upsert('app_settings',[{setting_key:'jobs_closed_value',setting_value:value,updated_at:new Date().toISOString()}],'setting_key');S.settings.jobs_closed_value=value;status(`บันทึกตัวเลือกปิดงานได้ ${value} ใบแล้ว`)}
   catch(e){status('บันทึกเกณฑ์ไม่สำเร็จ: '+e.message,1);try{await pull();refresh()}catch(_){}}
 };
 ['fCL','fPlan','fAct','fJob'].forEach(i=>$(i).onchange=renderDet); $('fQ').oninput=renderDet;
