@@ -91,7 +91,7 @@ dialog td input{text-align:left;background:#fff;border-color:var(--line)}
   <div class="bar">
     <label>วันที่ <input type="date" id="date"></label>
     <label>Skill <select id="skill"><option value="">ทั้งหมด</option><option>OFC</option><option>NODE</option></select></label>
-    <label>สูตรเปอร์เซ็นต์ <select id="ratioMode"><option value="actual_plan">% Actual/Plan</option><option value="actual_active" selected>% Actual/Active</option></select></label>
+    <label>สูตรเปอร์เซ็นต์ <select id="ratioMode"><option value="actual_plan" selected>% Actual/Plan</option><option value="actual_active">% Actual/Active</option></select></label>
     <label>เงื่อนไขทีมขาด <select id="gapMode"><option value="actual_plan">Actual ต่ำกว่า Plan</option><option value="plan_active">Plan ต่ำกว่า Active (ภัยธรรมชาติ)</option><option value="active_no_work">Active 1 / Plan 0 / Actual 0 / ปิดงาน 0</option></select></label>
     <label>ปิดงานได้ <select id="lowJobs"><option value="0" selected>0 ใบ</option><option value="1">1 ใบ</option><option value="2">2 ใบ</option></select></label>
     <button id="bTeams">⬆ Upload รายชื่อทีม (Teams Online)</button>
@@ -272,18 +272,18 @@ const pct=(a,b)=>b?(a/b*100):null;
 const cls=p=>p===null?'':p>=95?'good':p<85?'warn':'';
 let causeSummaryMode='all';
 function renderSum(){
-  const date=$('date').value, rows=rosterRows(), T={teams:0,active:0,plan:0,actual:0,jobs:0,open:0}, ratioMode=$('ratioMode').value;
+  const date=$('date').value, rows=rosterRows(), T={teams:0,active:0,plan:0,actual:0,jobs:0,open:0}, ratioMode=$('ratioMode').value; let totalMissing=0;
   const ratioLabel=ratioMode==='actual_active'?'% Actual/Active':'% Actual/Plan', ratioOf=c=>ratioMode==='actual_active'?pct(c.actual,c.active):pct(c.actual,c.plan), missingOf=c=>Math.max((ratioMode==='actual_active'?c.active:c.plan)-c.actual,0);
   let h=`<div class="ttl"><span>สรุปรายงาน${skillF()?' ('+skillF()+')':''}</span><span>${date?fmtD(date):''}</span></div>
   <table><thead><tr><th>Associate Director</th><th>Manager Area</th><th>Cluster Leader</th><th>Province</th><th>Active</th><th>Plan</th><th>Actual</th><th>ขาด</th><th>${ratioLabel}</th><th>Open Ticket</th><th>งานที่ปิดได้</th></tr></thead><tbody>`;
   rows.forEach((r,i)=>{
     const c=calc(r.province,date); for(const k in T) T[k]+=c[k];
-    const p=ratioOf(c), sa=span(rows,i,['ad_eas']), sm=span(rows,i,['ad_eas','mgr']), sl=span(rows,i,['ad_eas','mgr','cluster_leader']);
+    const p=ratioOf(c), missing=missingOf(c), sa=span(rows,i,['ad_eas']), sm=span(rows,i,['ad_eas','mgr']), sl=span(rows,i,['ad_eas','mgr','cluster_leader']); totalMissing+=missing;
     h+='<tr>'+(sa?`<td rowspan="${sa}">${esc(r.ad_eas)}</td>`:'')+(sm?`<td class="l" rowspan="${sm}">${esc(r.mgr)}</td>`:'')+(sl?`<td class="l" rowspan="${sl}">${esc(r.cluster_leader)}</td>`:'')
-      +`<td><b>${esc(r.province)}</b></td><td>${c.active}</td><td>${c.plan}</td><td>${c.actual}</td><td>${missingOf(c)}</td><td class="${cls(p)}">${p===null?'-':p.toFixed(1)+'%'}</td><td>${c.open}</td><td>${c.jobs}</td></tr>`;
+      +`<td><b>${esc(r.province)}</b></td><td>${c.active}</td><td>${c.plan}</td><td>${c.actual}</td><td>${missing}</td><td class="${cls(p)}">${p===null?'-':p.toFixed(1)+'%'}</td><td>${c.open}</td><td>${c.jobs}</td></tr>`;
   });
   const tp=ratioOf(T);
-  h+=`<tr class="tot"><td colspan="4">รวมทั้งหมด</td><td>${T.active}</td><td>${T.plan}</td><td>${T.actual}</td><td>${missingOf(T)}</td><td class="${cls(tp)}">${tp===null?'-':tp.toFixed(1)+'%'}</td><td>${T.open}</td><td>${T.jobs}</td></tr></tbody></table>`;
+  h+=`<tr class="tot"><td colspan="4">รวมทั้งหมด</td><td>${T.active}</td><td>${T.plan}</td><td>${T.actual}</td><td>${totalMissing}</td><td class="${cls(tp)}">${tp===null?'-':tp.toFixed(1)+'%'}</td><td>${T.open}</td><td>${T.jobs}</td></tr></tbody></table>`;
 
   const jobSummary=rows.map(r=>{
     const b={zero:0,one:0,two:0,more:0,total:0};
